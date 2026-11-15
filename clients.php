@@ -79,9 +79,7 @@ if ($search != "") {
         </div>
 
     </aside>
-
-    <!-- Main Content -->
-    <main class="main-content">
+        <main class="main-content">
 
         <header class="topbar">
             <div>
