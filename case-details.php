@@ -20,7 +20,7 @@ $stmt = $conn->prepare("
     SELECT cases.*, client.name AS client_name, client.phone AS client_phone
     FROM cases
     INNER JOIN client ON cases.client_id = client.client_id
-    WHERE cases.cid = ? AND cases.owner_id = ?
+    WHERE cases.cid = ? AND (cases.owner_id = ? OR cases.owner_id is NULL)
 ");
 
 $stmt->bind_param("ii", $case_id, $user_id);

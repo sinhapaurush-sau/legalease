@@ -13,13 +13,6 @@ $court = trim($_GET['court'] ?? '');
 $year = trim($_GET['year'] ?? '');
 $act = trim($_GET['act'] ?? '');
 
-// Fetch distinct courts and acts for filters
-$courts = $conn->query("
-    SELECT DISTINCT court
-    FROM legal_documents
-    WHERE court IS NOT NULL AND court != ''
-    ORDER BY court
-");
 
 $acts = $conn->query("
     SELECT DISTINCT act_name
@@ -28,48 +21,92 @@ $acts = $conn->query("
     ORDER BY act_name
 ");
 
-// Build search query
 $sql = "
     SELECT *
-    FROM legal_documents
+    FROM (
+        SELECT
+            cid AS id,
+            applicant AS title,
+            defendent AS parties,
+            body AS content,
+            'Landmark Judgment' AS document_type,
+            'Supreme Court of India' AS court,
+            NULL AS judge,
+            CAST(
+                SUBSTRING_INDEX(body, ' | ', 1)
+                AS UNSIGNED
+            ) AS year,
+            NULL AS act_name,
+            NULL AS section,
+            created_at,
+            'case' AS source
+
+        FROM cases
+        WHERE status = 'Landmark'
+
+        UNION ALL
+
+        SELECT
+            legal_document_id AS id,
+            title,
+            NULL AS parties,
+            content,
+            document_type,
+            court,
+            judge,
+            year,
+            act_name,
+            section,
+            created_at,
+            'document' AS source
+
+        FROM legal_documents
+    ) AS research
     WHERE 1=1
 ";
 
 $params = [];
 $types = "";
+if ($search !== '') {
 
-if ($search != '') {
-    $sql .= " AND (
-        title LIKE ?
-        OR act_name LIKE ?
-        OR section LIKE ?
-        OR content LIKE ?
-        OR document_type LIKE ?
-        OR judge LIKE ?
-    )";
+    $sql .= "
+        AND (
+            title LIKE ?
+            OR parties LIKE ?
+            OR content LIKE ?
+            OR document_type LIKE ?
+            OR judge LIKE ?
+            OR act_name LIKE ?
+            OR section LIKE ?
+        )
+    ";
 
     $keyword = "%$search%";
 
-    for ($i = 0; $i < 6; $i++) {
+    for ($i = 0; $i < 7; $i++) {
         $params[] = $keyword;
         $types .= "s";
     }
 }
 
-if ($court != '') {
+if ($court !== '') {
     $sql .= " AND court = ?";
+
     $params[] = $court;
     $types .= "s";
 }
 
-if ($act != '') {
+if ($act !== '') {
     $sql .= " AND act_name = ?";
+
     $params[] = $act;
     $types .= "s";
 }
 
-if ($year != '' && ctype_digit($year)) {
+
+if ($year !== '' && ctype_digit($year)) {
     $sql .= " AND year = ?";
+
     $params[] = (int)$year;
     $types .= "i";
 }
@@ -78,28 +115,38 @@ $sql .= " ORDER BY created_at DESC";
 
 $stmt = $conn->prepare($sql);
 
+if (!$stmt) {
+    die("Database query preparation failed.");
+}
+
 if (!empty($params)) {
     $stmt->bind_param($types, ...$params);
 }
 
 $stmt->execute();
+
 $documents = $stmt->get_result();
 
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Legal Research - LegalEase</title>
+
     <link rel="stylesheet" href="css/research.css">
+
 </head>
+
 <body>
 
 <div class="layout">
-
-    <!-- Sidebar -->
     <aside class="sidebar">
 
         <div class="brand">
@@ -108,51 +155,75 @@ $documents = $stmt->get_result();
         </div>
 
         <nav>
+
             <a href="dashboard.php">Dashboard</a>
+
             <a href="clients.php">Clients</a>
+
             <a href="cases.php">Cases</a>
-            <a href="research.php" class="active">Legal Research</a>
+
+            <a href="research.php" class="active">
+                Legal Research
+            </a>
+
             <a href="bookmarks.php">Documents</a>
+
             <a href="hearings.php">Hearings</a>
+
             <a href="tasks.php">Tasks & Notes</a>
+
         </nav>
 
         <div class="sidebar-bottom">
+
             <a href="profile.php">My Profile</a>
+
             <a href="logout.php">Logout</a>
+
         </div>
 
     </aside>
-
-    <!-- Main Content -->
     <main class="main-content">
-
         <header class="topbar">
+
             <div>
+
                 <h2>Legal Research</h2>
+
                 <p>Search legal documents and judgments</p>
+
             </div>
 
             <div class="user-info">
-                <?php echo htmlspecialchars($_SESSION['user_name']); ?>
+
+                <?php
+                echo htmlspecialchars($_SESSION['user_name']);
+                ?>
+
             </div>
+
         </header>
-
         <div class="content">
-
             <div class="page-header">
-                <div>
-                    <h3>Research Portal</h3>
-                    <p>Find Acts, sections and legal judgments.</p>
-                </div>
-            </div>
 
-            <!-- Search and Filters -->
+                <div>
+
+                    <h3>Research Portal</h3>
+
+                    <p>
+                        Find Acts, sections, legal judgments
+                        and landmark court decisions.
+                    </p>
+
+                </div>
+
+            </div>
             <div class="search-card">
 
                 <form method="GET">
 
                     <div class="search-input">
+
                         <input
                             type="text"
                             name="search"
@@ -160,63 +231,70 @@ $documents = $stmt->get_result();
                             value="<?php echo htmlspecialchars($search); ?>"
                         >
 
-                        <button type="submit">Search</button>
+                        <button type="submit">
+                            Search
+                        </button>
+
                     </div>
 
+
                     <div class="filters">
-
                         <div>
-                            <label>Court</label>
 
-                            <select name="court">
-                                <option value="">All Courts</option>
-
-                                <?php while ($row = $courts->fetch_assoc()) { ?>
-                                    <option
-                                        value="<?php echo htmlspecialchars($row['court']); ?>"
-                                        <?php echo $court == $row['court'] ? 'selected' : ''; ?>
-                                    >
-                                        <?php echo htmlspecialchars($row['court']); ?>
-                                    </option>
-                                <?php } ?>
-
-                            </select>
-                        </div>
-
-                        <div>
                             <label>Act</label>
 
                             <select name="act">
-                                <option value="">All Acts</option>
+
+                                <option value="">
+                                    All Acts
+                                </option>
 
                                 <?php while ($row = $acts->fetch_assoc()) { ?>
+
                                     <option
                                         value="<?php echo htmlspecialchars($row['act_name']); ?>"
-                                        <?php echo $act == $row['act_name'] ? 'selected' : ''; ?>
+                                        <?php echo $act === $row['act_name'] ? 'selected' : ''; ?>
                                     >
-                                        <?php echo htmlspecialchars($row['act_name']); ?>
+
+                                        <?php
+                                        echo htmlspecialchars($row['act_name']);
+                                        ?>
+
                                     </option>
+
                                 <?php } ?>
 
                             </select>
-                        </div>
 
+                        </div>
                         <div>
+
                             <label>Year</label>
 
                             <input
                                 type="number"
                                 name="year"
                                 placeholder="Enter year"
+                                min="1800"
+                                max="2100"
                                 value="<?php echo htmlspecialchars($year); ?>"
                             >
+
                         </div>
 
-                        <button type="submit" class="filter-btn">
+
+                        <button
+                            type="submit"
+                            class="filter-btn"
+                        >
                             Apply Filters
                         </button>
 
-                        <a href="research.php" class="reset-btn">
+
+                        <a
+                            href="research.php"
+                            class="reset-btn"
+                        >
                             Clear
                         </a>
 
@@ -226,52 +304,141 @@ $documents = $stmt->get_result();
 
             </div>
 
+
             <!-- Search Results -->
+
             <div class="results-section">
 
                 <div class="results-header">
+
                     <h3>Search Results</h3>
-                    <span><?php echo $documents->num_rows; ?> documents found</span>
+
+                    <span>
+                        <?php echo $documents->num_rows; ?>
+                        documents found
+                    </span>
+
                 </div>
+
 
                 <?php if ($documents->num_rows > 0) { ?>
 
+
                     <?php while ($doc = $documents->fetch_assoc()) { ?>
+
 
                         <div class="document-card">
 
                             <div class="document-info">
 
+
+                                <!-- Document Type -->
+
                                 <span class="document-type">
-                                    <?php echo htmlspecialchars($doc['document_type']); ?>
+
+                                    <?php
+                                    echo htmlspecialchars(
+                                        $doc['document_type'] ?? 'Document'
+                                    );
+                                    ?>
+
                                 </span>
 
+
+                                <!-- Title -->
+
                                 <h3>
-                                    <?php echo htmlspecialchars($doc['title']); ?>
+
+                                    <?php
+                                    echo htmlspecialchars(
+                                        $doc['title'] ?? 'Untitled'
+                                    );
+                                    ?>
+
                                 </h3>
 
+
+                                <!-- Parties -->
+
+                                <?php if (!empty($doc['parties'])) { ?>
+
+                                    <p class="document-meta">
+
+                                        <strong>Versus:</strong>
+
+                                        <?php
+                                        echo htmlspecialchars($doc['parties']);
+                                        ?>
+
+                                    </p>
+
+                                <?php } ?>
+
+
+                                <!-- Court, Year and Judge -->
+
                                 <p class="document-meta">
-                                    <?php echo htmlspecialchars($doc['court']); ?>
 
-                                    <?php if ($doc['year']) { ?>
-                                        | <?php echo htmlspecialchars($doc['year']); ?>
+                                    <?php
+                                    echo htmlspecialchars($doc['court'] ?? '');
+                                    ?>
+
+                                    <?php if (!empty($doc['year'])) { ?>
+
+                                        | <?php
+                                        echo htmlspecialchars($doc['year']);
+                                        ?>
+
                                     <?php } ?>
 
-                                    <?php if ($doc['judge']) { ?>
-                                        | Judge: <?php echo htmlspecialchars($doc['judge']); ?>
+
+                                    <?php if (!empty($doc['judge'])) { ?>
+
+                                        | Judge:
+
+                                        <?php
+                                        echo htmlspecialchars($doc['judge']);
+                                        ?>
+
                                     <?php } ?>
+
                                 </p>
 
-                                <p class="document-act">
-                                    Act: <?php echo htmlspecialchars($doc['act_name']); ?>
 
-                                    <?php if ($doc['section']) { ?>
-                                        | Section: <?php echo htmlspecialchars($doc['section']); ?>
-                                    <?php } ?>
-                                </p>
+                                <!-- Act and Section -->
+
+                                <?php if (!empty($doc['act_name'])) { ?>
+
+                                    <p class="document-act">
+
+                                        Act:
+
+                                        <?php
+                                        echo htmlspecialchars($doc['act_name']);
+                                        ?>
+
+
+                                        <?php if (!empty($doc['section'])) { ?>
+
+                                            | Section:
+
+                                            <?php
+                                            echo htmlspecialchars($doc['section']);
+                                            ?>
+
+                                        <?php } ?>
+
+                                    </p>
+
+                                <?php } ?>
+
+
+                                <!-- Content -->
 
                                 <p class="document-content">
+
                                     <?php
+
                                     $content = $doc['content'] ?? '';
 
                                     echo htmlspecialchars(
@@ -279,29 +446,55 @@ $documents = $stmt->get_result();
                                             ? substr($content, 0, 200) . '...'
                                             : $content
                                     );
+
                                     ?>
+
                                 </p>
 
-                                <a
-                                    href="legal-document.php?id=<?php echo $doc['legal_document_id']; ?>"
-                                    class="view-btn"
-                                >
-                                    Read Document
-                                </a>
+
+                                <!-- View Button -->
+
+                                <?php if ($doc['source'] === 'case') { ?>
+
+                                    <a
+                                        href="case-details.php?id=<?php echo (int)$doc['id']; ?>"
+                                        class="view-btn"
+                                    >
+                                        View Judgment
+                                    </a>
+
+                                <?php } else { ?>
+
+                                    <a
+                                        href="legal-document.php?id=<?php echo (int)$doc['id']; ?>"
+                                        class="view-btn"
+                                    >
+                                        Read Document
+                                    </a>
+
+                                <?php } ?>
+
 
                             </div>
 
                         </div>
 
+
                     <?php } ?>
+
 
                 <?php } else { ?>
 
+
                     <div class="empty">
-                        No legal documents found.
+
+                        No legal documents or judgments found.
+
                     </div>
 
+
                 <?php } ?>
+
 
             </div>
 
@@ -312,4 +505,5 @@ $documents = $stmt->get_result();
 </div>
 
 </body>
+
 </html>

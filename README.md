@@ -1,5 +1,7 @@
 # LegalEase
-- Bhai pehle na XAMPP download krke install kr lo
-- Uske baad xampp/htdocs mei iss project ko clone kr lo, ok?
-- Fir localhost/phpmyadmin mei jakr ek database banao "legalease" naam ka
-- Wo database select krke Import pr jakr, db.sql ko import kar lo
+- First install XAMPP from here: [Download XAMPP](https://www.apachefriends.org/)
+- Clone the project into xampp/htdocs folder, `C:\xampp\htdocs`
+- Open XAMPP Control Panel, Start `Apache` and `MySQL`.
+- Open `http://localhost/phpmyadmin`
+- Create new database named `legalease` and import `legalease.sql` in it.
+- Now open `localhost`, it must be running now.
