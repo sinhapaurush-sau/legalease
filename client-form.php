@@ -8,7 +8,8 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$client_id = $_GET['id'] ?? null;
+$practitioner_id = (int) $_SESSION['user_id'];
+$client_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
 $name = "";
 $phone = "";
@@ -16,9 +17,13 @@ $note = "";
 $error = "";
 
 // Fetch client details when editing
-if ($client_id) {
-    $stmt = $conn->prepare("SELECT * FROM client WHERE client_id = ?");
-    $stmt->bind_param("i", $client_id);
+if ($client_id > 0) {
+    $stmt = $conn->prepare("
+        SELECT * FROM client
+        WHERE client_id = ? AND practitioner_id = ?
+    ");
+
+    $stmt->bind_param("ii", $client_id, $practitioner_id);
     $stmt->execute();
 
     $result = $stmt->get_result();
@@ -32,6 +37,8 @@ if ($client_id) {
     $name = $client['name'];
     $phone = $client['phone'];
     $note = $client['note'];
+
+    $stmt->close();
 }
 
 // Handle form submission
@@ -47,26 +54,39 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $error = "Please enter a valid 10-digit phone number.";
     } else {
 
-        if ($client_id) {
+        if ($client_id > 0) {
 
-            // Update client
+            // Update only the practitioner's own client
             $stmt = $conn->prepare("
                 UPDATE client
                 SET name = ?, phone = ?, note = ?
-                WHERE client_id = ?
+                WHERE client_id = ? AND practitioner_id = ?
             ");
 
-            $stmt->bind_param("sssi", $name, $phone, $note, $client_id);
+            $stmt->bind_param(
+                "sssii",
+                $name,
+                $phone,
+                $note,
+                $client_id,
+                $practitioner_id
+            );
 
         } else {
 
-            // Insert new client
+            // Insert new client with current practitioner's ID
             $stmt = $conn->prepare("
-                INSERT INTO client (name, phone, note)
-                VALUES (?, ?, ?)
+                INSERT INTO client (practitioner_id, name, phone, note)
+                VALUES (?, ?, ?, ?)
             ");
 
-            $stmt->bind_param("sss", $name, $phone, $note);
+            $stmt->bind_param(
+                "isss",
+                $practitioner_id,
+                $name,
+                $phone,
+                $note
+            );
         }
 
         if ($stmt->execute()) {
@@ -75,6 +95,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } else {
             $error = "Something went wrong. Please try again.";
         }
+
+        $stmt->close();
     }
 }
 

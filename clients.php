@@ -8,62 +8,49 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$practitioner_id = (int) $_SESSION['user_id'];
-$search = trim($_GET['search'] ?? '');
+$practitioner_id = $_SESSION['user_id'];
 
-// Fetch only clients belonging to the logged-in practitioner
-$sql = "
-    SELECT *
-    FROM client
-    WHERE practitioner_id = ?
-";
+// Search clients belonging to the logged-in practitioner
+$search = "";
 
-$params = [$practitioner_id];
-$types = "i";
-
-// Search within practitioner's own clients
-if ($search !== "") {
-    $sql .= "
-        AND (
-            name LIKE ?
-            OR phone LIKE ?
-        )
-    ";
-
-    $keyword = "%{$search}%";
-
-    $params[] = $keyword;
-    $params[] = $keyword;
-
-    $types .= "ss";
+if (isset($_GET['search'])) {
+    $search = trim($_GET['search']);
 }
 
-$sql .= " ORDER BY client_id DESC";
+if ($search != "") {
+    $stmt = $conn->prepare("
+        SELECT * FROM client
+        WHERE practitioner_id = ?
+        AND (name LIKE ? OR phone LIKE ?)
+        ORDER BY client_id DESC
+    ");
 
-$stmt = $conn->prepare($sql);
+    $keyword = "%" . $search . "%";
+    $stmt->bind_param("iss", $practitioner_id, $keyword, $keyword);
+    $stmt->execute();
+    $clients = $stmt->get_result();
 
-if (!$stmt) {
-    die("Unable to fetch clients.");
+} else {
+    $stmt = $conn->prepare("
+        SELECT * FROM client
+        WHERE practitioner_id = ?
+        ORDER BY client_id DESC
+    ");
+
+    $stmt->bind_param("i", $practitioner_id);
+    $stmt->execute();
+    $clients = $stmt->get_result();
 }
-
-$stmt->bind_param($types, ...$params);
-$stmt->execute();
-
-$clients = $stmt->get_result();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Clients - LegalEase</title>
-
     <link rel="stylesheet" href="css/clients.css">
 </head>
-
 <body>
 
 <div class="layout">
@@ -93,48 +80,34 @@ $clients = $stmt->get_result();
 
     </aside>
 
-
     <!-- Main Content -->
     <main class="main-content">
 
         <header class="topbar">
-
             <div>
                 <h2>Clients</h2>
                 <p>Manage your client information</p>
             </div>
 
             <div class="user-info">
-                <?php
-                echo htmlspecialchars($_SESSION['user_name']);
-                ?>
+                <?php echo htmlspecialchars($_SESSION['user_name']); ?>
             </div>
-
         </header>
-
 
         <div class="content">
 
-            <!-- Page Header -->
             <div class="page-header">
-
                 <div>
                     <h3>All Clients</h3>
-                    <p>View and manage your registered clients.</p>
+                    <p>View and manage registered clients.</p>
                 </div>
 
-                <a href="client-form.php" class="add-btn">
-                    + Add Client
-                </a>
-
+                <a href="client-form.php" class="add-btn">+ Add Client</a>
             </div>
-
 
             <!-- Search -->
             <div class="search-box">
-
                 <form method="GET">
-
                     <input
                         type="text"
                         name="search"
@@ -142,28 +115,18 @@ $clients = $stmt->get_result();
                         value="<?php echo htmlspecialchars($search); ?>"
                     >
 
-                    <button type="submit">
-                        Search
-                    </button>
+                    <button type="submit">Search</button>
 
-                    <?php if ($search !== "") { ?>
-
-                        <a href="clients.php" class="reset-btn">
-                            Clear
-                        </a>
-
+                    <?php if ($search != "") { ?>
+                        <a href="clients.php" class="reset-btn">Clear</a>
                     <?php } ?>
-
                 </form>
-
             </div>
-
 
             <!-- Client Table -->
             <div class="table-container">
 
                 <table>
-
                     <thead>
                         <tr>
                             <th>ID</th>
@@ -176,61 +139,40 @@ $clients = $stmt->get_result();
 
                     <tbody>
 
-                        <?php if ($clients->num_rows > 0) { ?>
+                        <?php if ($clients && $clients->num_rows > 0) { ?>
 
                             <?php while ($client = $clients->fetch_assoc()) { ?>
 
                                 <tr>
+                                    <td>#<?php echo $client['client_id']; ?></td>
 
                                     <td>
-                                        #<?php echo (int) $client['client_id']; ?>
+                                        <?php echo htmlspecialchars($client['name']); ?>
+                                    </td>
+
+                                    <td>
+                                        <?php echo htmlspecialchars($client['phone']); ?>
                                     </td>
 
                                     <td>
                                         <?php
-                                        echo htmlspecialchars($client['name'] ?? '');
-                                        ?>
-                                    </td>
-
-                                    <td>
-                                        <?php
-                                        echo htmlspecialchars($client['phone'] ?? '');
-                                        ?>
-                                    </td>
-
-                                    <td>
-                                        <?php
-
                                         $note = $client['note'] ?? '';
-
                                         echo htmlspecialchars(
                                             strlen($note) > 50
                                                 ? substr($note, 0, 50) . '...'
                                                 : $note
                                         );
-
                                         ?>
                                     </td>
 
                                     <td class="actions">
-
                                         <a
-                                            href="client-form.php?id=<?php echo (int) $client['client_id']; ?>"
+                                            href="client-form.php?id=<?php echo $client['client_id']; ?>"
                                             class="edit-btn"
                                         >
                                             Edit
                                         </a>
-
-                                        <a
-                                            href="client-delete.php?id=<?php echo (int) $client['client_id']; ?>"
-                                            class="delete-btn"
-                                            onclick="return confirm('Are you sure you want to delete this client?')"
-                                        >
-                                            Delete
-                                        </a>
-
                                     </td>
-
                                 </tr>
 
                             <?php } ?>
@@ -239,16 +181,13 @@ $clients = $stmt->get_result();
 
                             <tr>
                                 <td colspan="5" class="empty">
-                                    <?php echo $search !== ''
-                                        ? 'No matching clients found.'
-                                        : 'No clients registered yet.'; ?>
+                                    No clients found.
                                 </td>
                             </tr>
 
                         <?php } ?>
 
                     </tbody>
-
                 </table>
 
             </div>
